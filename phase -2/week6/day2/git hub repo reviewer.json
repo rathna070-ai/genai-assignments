@@ -1,0 +1,393 @@
+{
+  "name": "git hub repo reviewer",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "samplereviewer1",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -592,
+        -208
+      ],
+      "id": "45a17d94-f7ce-401b-8d10-22429d438680",
+      "name": "Webhook",
+      "webhookId": "090a0cc3-93fa-4ae6-aca6-ae0af2d01c57"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/git/trees/{{ $json.branch }}?recursive=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -240,
+        -208
+      ],
+      "id": "4233ac43-2979-43c3-96f9-8bc98552da91",
+      "name": "HTTP Request",
+      "credentials": {
+        "githubApi": {
+          "id": "Ii86dIc5wNrKRHo1",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const treeData = $input.first().json;\nconst parsed = $('Parse GitHub URL').first().json;\nconst tree = treeData.tree || [];\n\nconst CODE_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cs', '.go', '.rb', '.php', '.cpp', '.c', '.h', '.kt', '.swift'];\nconst EXCLUDE_PATTERNS = ['node_modules/', 'dist/', 'build/', 'vendor/', '.min.js', 'package-lock.json', 'yarn.lock', '.git/', 'test/fixtures/'];\nconst MAX_FILE_SIZE_BYTES = 50000; // keeps LLM prompt cost/context sane\n\nconst filtered = tree.filter(item => {\n  if (item.type !== 'blob') return false;\n  const path = item.path.toLowerCase();\n  const hasCodeExt = CODE_EXTENSIONS.some(ext => path.endsWith(ext));\n  const isExcluded = EXCLUDE_PATTERNS.some(p => path.includes(p));\n  const sizeOk = !item.size || item.size <= MAX_FILE_SIZE_BYTES;\n  return hasCodeExt && !isExcluded && sizeOk;\n});\n\nreturn filtered.map(item => ({\n  json: {\n    owner: parsed.owner,\n    repo: parsed.repo,\n    branch: parsed.branch,\n    path: item.path,\n    sha: item.sha,\n    size: item.size\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        -208
+      ],
+      "id": "5c503ac2-e256-49c4-bf34-15a452341d30",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "You are an expert AI assistant specializing in professional software code review. Review the supplied Python, .NET, or Java code as a senior software engineer who applies recognized industry standards for secure, reliable, maintainable, and production-ready software.\n\nAnalyze the code only within the provided context. Do not invent requirements, interfaces, or system behavior. Clearly state assumptions, ambiguities, and information that must be confirmed when the code or context is incomplete.\n\nApply relevant best practices and standards where appropriate, including OWASP secure coding guidance, CWE prevention, SOLID principles, secure dependency management, privacy-by-design, API design practices, accessibility requirements, and applicable organizational or regulatory requirements supplied in the context.\n\nEvaluate the implementation against these five parameters. Give each parameter a score out of 20 and provide evidence tied to the supplied code.\n\n1. Correctness and Functional Safety\n   - Does the implementation correctly meet the stated requirements?\n   - Does it handle validation, edge cases, error paths, data integrity, and failure recovery appropriately?\n   - Could a defect cause incorrect transactions, corrupted data, unsafe operations, financial loss, or significant user impact?\n\n2. Security, Privacy, and Compliance\n   - Assess authentication, authorization, least privilege, input validation, output encoding, injection prevention, secrets handling, encryption, secure error handling, logging, and dependency risks.\n   - Confirm that sensitive data is not exposed in logs, exceptions, responses, test fixtures, source control, or telemetry.\n   - Assess alignment with the explicitly supplied regulations, contractual obligations, data-retention rules, and internal policies. Do not claim certification or legal compliance based solely on a code review.\n\n3. Maintainability and Code Quality\n   - Is the code clear, cohesive, readable, appropriately structured, and aligned with language and framework conventions?\n   - Identify duplication, excessive complexity, weak naming, fragile dependencies, poor exception handling, missing documentation, and violations of separation of concerns.\n\n4. Testability and Reliability\n   - Can engineers derive focused unit, integration, end-to-end, security, and negative-path tests?\n   - Are dependencies injectable or mockable? Are retries, timeouts, transactions, concurrency, idempotency, resource cleanup, and asynchronous behavior safe and testable?\n\n5. Technical Feasibility and Operational Readiness\n   - Is the design practical for a typical production environment?\n   - Assess performance, scalability, availability, resilience, observability, deployment risk, backward compatibility, configuration management, API compatibility, and supportability.\n\n## Language-Specific Review Focus\n\nFor Python, also assess: type hints, validation, virtual environment and dependency pinning, exception boundaries, async correctness, ORM/query safety, resource cleanup, and secure serialization/deserialization.\n\nFor .NET, also assess: nullable reference handling, async/await behavior, dependency injection lifetimes, Entity Framework query/transaction safety, authorization policies, secrets/configuration handling, structured logging, disposal of resources, and package vulnerabilities.\n\nFor Java, also assess: null safety, exception strategy, thread safety, Spring/Jakarta dependency injection, JPA/Hibernate query and transaction safety, bean validation, authorization controls, resource management, secure serialization/deserialization, and dependency vulnerabilities.\n\n## Severity Definitions\n\n- Critical: Exploitable security vulnerability, severe data loss/corruption, unauthorized sensitive-data exposure, service outage risk, or a major regulatory breach.\n- High: Significant correctness, security, reliability, or compliance issue that should be fixed before release.\n- Medium: Material quality, testability, maintainability, performance, or operational risk that should be planned for remediation.\n- Low: Minor improvement with limited immediate risk.\n\n## Required Output Format\n\nReturn ONLY a single valid JSON object — no markdown fences, no prose outside the JSON — in exactly this shape:\n\n{\n  \"file\": \"<file path>\",\n  \"overall_score\": <integer 0-100>,\n  \"overall_rating\": \"<Excellent | Good | Needs Improvement | High Risk>\",\n  \"scorecard\": [\n    { \"parameter\": \"Correctness and Functional Safety\", \"summary\": \"<code-specific assessment>\", \"score\": <0-20> },\n    { \"parameter\": \"Security, Privacy, and Compliance\", \"summary\": \"<code-specific assessment>\", \"score\": <0-20> },\n    { \"parameter\": \"Maintainability and Code Quality\", \"summary\": \"<code-specific assessment>\", \"score\": <0-20> },\n    { \"parameter\": \"Testability and Reliability\", \"summary\": \"<code-specific assessment>\", \"score\": <0-20> },\n    { \"parameter\": \"Technical Feasibility and Operational Readiness\", \"summary\": \"<code-specific assessment>\", \"score\": <0-20> }\n  ],\n  \"findings\": [\n    { \"severity\": \"Critical|High|Medium|Low\", \"parameter\": \"<parameter name>\", \"location\": \"<file:line or N/A>\", \"finding\": \"<specific issue>\", \"impact\": \"<security/privacy/functionality/reliability/performance/compliance/user impact>\", \"recommendation\": \"<concrete remediation>\" }\n  ],\n  \"recommended_tests\": [\n    { \"test_type\": \"Unit|Integration|End-to-End|Security|Performance|Negative Path\", \"scenario\": \"<specific scenario>\", \"expected_result\": \"<expected behavior>\" }\n  ],\n  \"improvement_summary\": {\n    \"priority_fixes\": [\"<most important fix first>\", \"...\"],\n    \"release_blocking\": [\"<any Critical/High finding that should block release, or empty array>\"],\n    \"note\": \"<'No material issues identified in the supplied scope' plus residual risks, ONLY if nothing material was found>\"\n  }\n}\n\nFor every score below 15 in the scorecard, ensure at least one corresponding entry exists in findings or priority_fixes with a specific, actionable recommendation.\n\n## Review Principles\n\n- Be professional, analytical, and constructive.\n- Tie every finding to code evidence; cite file names and line numbers when available.\n- Prioritize security, privacy, correctness, data integrity, reliability, and customer impact over stylistic preferences.\n- Avoid generic advice. Recommend concrete changes appropriate for the stated language and framework.\n- Identify where threat modeling, architecture review, penetration testing, legal review, or domain-expert validation is needed beyond the code review.",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "HumanMessagePromptTemplate",
+              "message": "=File path: {{ $json.path }}\n\nCode: {{ $json.content }}"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        -16,
+        64
+      ],
+      "id": "f972afea-f15e-4170-9f07-a7e3a1fd0072",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        224
+      ],
+      "id": "8badc076-7876-464f-a1b0-00ba2baadc87",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "h9as93Rd3pTz5Iz9",
+          "name": "alt email"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.text || $json.output || $json.content || '';\nlet parsed;\n\ntry {\n  const cleaned = raw.replace(/```json|```/g, '').trim();\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    file: $json.path,\n    overall_score: null,\n    overall_rating: 'Error',\n    scorecard: [],\n    findings: [{\n      severity: 'High',\n      parameter: 'N/A',\n      location: 'N/A',\n      finding: 'Failed to parse model output',\n      impact: 'Review could not be completed',\n      recommendation: 'Re-run review or inspect raw_output'\n    }],\n    recommended_tests: [],\n    improvement_summary: {},\n    raw_output: raw\n  };\n}\n\nreturn [{ json: parsed }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        64
+      ],
+      "id": "90247a67-b854-4669-92d6-c252d9ce8b82",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -560,
+        48
+      ],
+      "id": "85106533-13db-4678-8edc-d6697435ec37",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/contents/{{ $json.path }}?ref={{ $json.branch }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -320,
+        64
+      ],
+      "id": "b7305c52-af12-4373-8844-8a040dc031cb",
+      "name": "HTTP Request2",
+      "credentials": {
+        "githubApi": {
+          "id": "Ii86dIc5wNrKRHo1",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "files",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        304,
+        -48
+      ],
+      "id": "ffd25b70-666c-471a-a17d-5c69c84614cc",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "jsCode": "const files = $input.first().json.files || [];\nconst validScores = files.map(f => f.overall_score).filter(s => typeof s === 'number');\nconst overallScore = validScores.length\n  ? Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length)\n  : null;\n\nconst parsed = $('Parse GitHub URL').first().json;\n\nreturn [{\n  json: {\n    repo: `${parsed.owner}/${parsed.repo}`,\n    branch: parsed.branch,\n    overall_score: overallScore,\n    files_reviewed: files.length,\n    files\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        -48
+      ],
+      "id": "747dc1f9-f77c-4435-b872-34dae56053f7",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        608,
+        -48
+      ],
+      "id": "96b94bc4-da12-4b5f-a269-1a27522228ed",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nlet body = item.body;\nif (typeof body === 'string') {\n  try { body = JSON.parse(body); } catch (e) { body = {}; }\n}\nif (!body || typeof body !== 'object') body = {};\n\nconst query = item.query || {};\n\n// Your UI is sending it under a few different key names — check all of them,\n// in both the body and the query string.\nconst repoUrl = body.repoUrl || body.githubUrl || body.url\n             || query.repoUrl || query.githubUrl || query.url;\n\nconst branch = body.branch || query.branch || 'main';\n\nif (!repoUrl) {\n  throw new Error(\n    'No repo URL found. Body keys: ' + Object.keys(body).join(', ') +\n    ' | Query keys: ' + Object.keys(query).join(', ')\n  );\n}\n\nconst match = repoUrl.match(/github\\.com[:/]([^/]+)\\/([^/.]+)(\\.git)?/i);\nif (!match) {\n  throw new Error('Invalid GitHub repository URL: ' + repoUrl);\n}\n\nreturn [{\n  json: {\n    owner: match[1],\n    repo: match[2],\n    branch\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -208
+      ],
+      "id": "a0885940-d658-46d9-8589-c4a295b663ae",
+      "name": "Parse GitHub URL"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\nlet content = '';\nif (response.encoding === 'base64' && response.content) {\n  content = Buffer.from(response.content, 'base64').toString('utf-8');\n} else {\n  content = response.content || '';\n}\n\nconst MAX_CHARS = 2000;\nconst truncated = content.length > MAX_CHARS;\nif (truncated) content = content.slice(0, MAX_CHARS) + '\\n\\n/* ...truncated for review... */';\n\nreturn [{\n  json: {\n    path: response.path,\n    sha: response.sha,\n    content,\n    truncated\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        64
+      ],
+      "id": "3be545f9-2689-43df-9c91-9451c1479e25",
+      "name": "Decode File Content"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        80,
+        -208
+      ],
+      "id": "812f3373-0af5-4798-93c6-74f587e8e78e",
+      "name": "Limit"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse GitHub URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Decode File Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse GitHub URL": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode File Content": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ceeddd8b-fcfe-421e-ac5a-947dd0f266a1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3b31a9933d2ec91a91e2fcdc036ea26642d20c0ed6024ea55171452b36dec1b6"
+  },
+  "nodeGroups": [],
+  "id": "ynWmyQzqx611bJ1b",
+  "tags": []
+}
